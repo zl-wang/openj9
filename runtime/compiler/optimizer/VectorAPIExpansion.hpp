@@ -220,7 +220,7 @@ public:
         ElementType,
         NumLanes,
         Scalar,
-        Invalid
+        NotSet
     };
 
     static const char *vapiObjTypeNames[];
@@ -244,7 +244,6 @@ public:
     };
 
     static const char *vapiOpCodeTypeNames[];
-    static const char *vapiElementTypeNames[];
 
     /** \brief
      *  Entry of the method handlers table
@@ -267,7 +266,77 @@ public:
 
     static const vec_sz_t vec_len_unknown = -1;
     static const vec_sz_t vec_len_default = 0;
-    static const vec_sz_t vec_len_boxed_unknown = 1;
+
+    /** \brief
+     *     Encapsulates common vectorization information shared by multiple table elements
+     */
+    class vectorInfo {
+    public:
+        TR_ALLOC(TR_Memory::Inliner); // TODO: add new type
+
+        vectorInfo()
+            : _vecLen(vec_len_default)
+            , _elementType(TR::NoType)
+            , _objectType(NotSet)
+        {}
+
+        vectorInfo(vec_sz_t vecLen, TR::DataType elementType, vapiObjType objectType)
+            : _vecLen(vecLen)
+            , _elementType(elementType)
+            , _objectType(objectType)
+        {}
+
+        bool operator==(const vectorInfo &other) const
+        {
+            return _vecLen == other._vecLen && _elementType.getDataType() == other._elementType.getDataType()
+                && _objectType == other._objectType;
+        }
+
+        bool operator!=(const vectorInfo &other) const { return !(*this == other); }
+
+        bool isSet()
+        {
+            return _vecLen != vec_len_default && _elementType.getDataType() != TR::NoType && _objectType != NotSet;
+        }
+
+        void setIsUnknown()
+        {
+            _vecLen = vec_len_unknown;
+            _elementType = TR::Address;
+            _objectType = Unknown;
+        }
+
+        bool isUnknown()
+        {
+            return _vecLen == vec_len_unknown || _elementType.getDataType() == TR::Address || _objectType == Unknown;
+        }
+
+        /** \brief
+         *     Print vectorization info for tracing/debugging
+         *
+         *   \param trace
+         *      trace or not
+         *
+         *   \param log
+         *      Logger
+         */
+        void print(bool trace, OMR::Logger *log) const;
+
+        /** \brief
+         *   Total vector length in bits
+         */
+        vec_sz_t _vecLen;
+
+        /** \brief
+         *  Vector element type
+         */
+        TR::DataType _elementType;
+
+        /** \brief
+         *   Resulting object type
+         */
+        vapiObjType _objectType;
+    };
 
     /** \brief
      *     Element of the alias table.
@@ -293,13 +362,11 @@ public:
         vectorAliasTableElement()
             : _symRef(NULL)
             , _vecSymRef(NULL)
-            , _vecLen(vec_len_default)
-            , _elementType(TR::NoType)
+            , _vinfo()
             , _aliases(NULL)
             , _classId(0)
             , _cantVectorize(false)
             , _cantScalarize(false)
-            , _objectType(Unknown)
             , _tempAliases(NULL)
             , _tempClassId(0)
         {}
@@ -311,16 +378,11 @@ public:
             TR_Array<TR::SymbolReference *> *_scalarSymRefs;
         };
 
-        /** \brief
-         *   Total vector length in bits
-         */
-        vec_sz_t _vecLen;
-        TR::DataType _elementType;
+        vectorInfo _vinfo;
         TR_BitVector *_aliases;
         int32_t _classId;
         bool _cantVectorize;
         bool _cantScalarize;
-        vapiObjType _objectType; // resulting object type
 
         TR_BitVector *_tempAliases;
         int32_t _tempClassId;
@@ -335,16 +397,12 @@ public:
         TR_ALLOC(TR_Memory::Inliner); // TODO: add new type
 
         nodeTableElement()
-            : _vecLen(vec_len_default)
-            , _elementType(TR::NoType)
-            , _objectType(Unknown)
+            : _vinfo()
             , _origSymRef(NULL)
             , _scalarNodes(NULL)
         {}
 
-        vec_sz_t _vecLen;
-        TR::DataType _elementType;
-        vapiObjType _objectType; // resulting object type
+        vectorInfo _vinfo;
         bool _canVectorize;
         bool _canScalarize;
 
@@ -459,14 +517,8 @@ public:
      *  \param node
      *     Node
      *
-     *  \param elementType
-     *     Element type
-     *
-     *  \param bitsLength
-     *     Vector length in bits
-     *
-     *  \param objectType
-     *     Object type
+     *  \param vInfo
+     *     Vector info
      *
      *  \param scalarized
      *     True iff node was scalarized
@@ -475,8 +527,7 @@ public:
      *     Find source type
      *
      */
-    bool isVectorizedOrScalarizedNode(TR::Node *node, TR::DataType &elementType, vec_sz_t &bitsLength,
-        vapiObjType &objectType, bool &scalarized, bool sourceType = false);
+    bool isVectorizedOrScalarizedNode(TR::Node *node, vectorInfo &vInfo, bool &scalarized, bool sourceType = false);
 
     /** \brief
      *     Finds original Vector or Mask class for a node
@@ -741,17 +792,14 @@ public:
      *  \param i
      *     Reference id
      *
-     *  \param classLength
-     *     Number of lanes in theclass
-     *
-     *  \param classType
-     *     Element type of the class
+     *  \param classVectorInfo
+     *     class vectorization info
      *
      *  \param classField
      *     Pointer to the struct member that contains class
      *
      */
-    bool validateSymRef(int32_t classId, int32_t i, vec_sz_t &classLength, TR::DataType &classType,
+    bool validateSymRef(int32_t classId, int32_t i, vectorInfo &classVectorInfo,
         int32_t vectorAliasTableElement::*classField);
 
     /** \brief
