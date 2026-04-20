@@ -378,6 +378,7 @@ static const OptimizationStrategy warmStrategyOpts[] = {
 #endif
     { OMR::basicBlockExtension, OMR::MarkLastRun }, // extend blocks; move trees around if reqd
     { OMR::localValuePropagationGroup },
+    { OMR::switchAnalyzer },
     { OMR::explicitNewInitialization, OMR::IfNews },
     { OMR::arraycopyTransformation },
     { OMR::treeSimplification, OMR::IfEnabled },
